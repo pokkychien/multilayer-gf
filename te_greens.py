@@ -318,8 +318,8 @@ def gyy_TE(n_list, d_list,
         )
 
         cavity = (
-            np.exp(-q * k0 * z_obs) * RB * f2y_src
-            + np.exp(+q * k0 * z_obs) * RF * f1y_src
+            np.exp(+q * k0 * z_obs) * RF * f1y_src
+            + np.exp(-q * k0 * z_obs) * RB * f2y_src
         )
 
         Gyy = direct + cavity

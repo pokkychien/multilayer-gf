@@ -68,6 +68,23 @@ def TM_f1xf2x_same_layer(q_list, R_down, R_up,
 
     return f1x, f2x
 
+def TM_df1xdf2x_same_layer(q_list, R_down, R_up,
+                           layer_src, z_src, k0, kp):
+    q  = q_list[layer_src]
+    RF = R_down[layer_src]
+    RB = R_up[layer_src]
+
+    e2 = (kp**2 - (q * k0)**2) / (k0**2)
+
+    ez  = np.exp(+q * k0 * z_src)   # E_+
+    emz = np.exp(-q * k0 * z_src)   # E_-
+
+    den = 2 * e2 * (k0 / q) * (1 - RF * RB)
+
+    df1x = -(q*k0) * (ez - RB*emz) / den
+    df2x = +(q*k0) * (emz - RF*ez) / den
+    return df1x, df2x
+
 
 def TM_f1zf2z_same_layer(q_list, R_down, R_up,
                          layer_src, z_src, k0, kp):
@@ -207,37 +224,65 @@ def propagate_up_TM(f2_src, q_list, R_up,
 # ------------------------------------------------------------
 # Level 5: assemble TM Green's function components
 # ------------------------------------------------------------
-def gxx_TM_same_layer(q_list, R_down, R_up,
-                      layer, z_obs, z_src,
-                      f1x_src, f2x_src,
-                      k0, eps_list):
-    """
-    TM same-layer G_xx, strictly following paper.
+def gxx_TM(n_list, d_list,
+           layer_src, z_src,
+           layer_obs, z_obs,
+           k0, kp):
 
-    NOTE:
-        This is SAME LAYER ONLY.
-        Cross-layer formula is NOT written here.
-    """
+    eps_list = np.array(n_list, dtype=complex)**2
+    q_list   = compute_q_list(n_list, k0, kp)
 
-    q   = q_list[layer]
-    eps = eps_list[layer]
+    R_down = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")
+    R_up   = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")
 
-    RF = R_down[layer]
-    RB = R_up[layer]
-
-    # --- paper first term ---
-    direct = (
-        - q / (2.0 * k0**2 * eps)
-        * np.exp(-q * k0 * np.abs(z_obs - z_src))
+    f1x_src, f2x_src = TM_f1xf2x_same_layer(
+        q_list, R_down, R_up, layer_src, z_src, k0, kp, eps_list
     )
 
-    # --- reflected terms ---
-    refl = (
-        np.exp(+q * k0 * z_obs) * RF * f1x_src
-        + np.exp(-q * k0 * z_obs) * RB * f2x_src
-    )
+    q_obs   = q_list[layer_obs]
+    eps_obs = eps_list[layer_obs]
+    RF_obs  = R_down[layer_obs]
+    RB_obs  = R_up[layer_obs]
 
-    return direct + refl
+    # -------------------------
+    # Case A: same layer (paper)
+    # -------------------------
+    if layer_obs == layer_src:
+        q   = q_list[layer_src]
+        eps = eps_list[layer_src]
+        RF  = R_down[layer_src]
+        RB  = R_up[layer_src]
+
+        direct = (-q / (2.0 * k0 * eps)) * np.exp(-q * k0 * np.abs(z_obs - z_src))
+        refl   = (np.exp(+q * k0 * z_obs) * RF * f1x_src
+                  + np.exp(-q * k0 * z_obs) * RB * f2x_src)
+        Gxx = direct + refl
+        return Gxx
+
+    # -------------------------
+    # Case B: obs below src
+    # -------------------------
+    if layer_obs > layer_src:
+        f1x_at_obs_top = propagate_down_TM(
+            f1x_src, q_list, R_down,
+            layer_src, layer_obs,
+            k0, d_list, eps_list
+        )
+        dress = (np.exp(-q_obs * k0 * z_obs) + np.exp(+q_obs * k0 * z_obs) * RF_obs)
+        Gxx = dress * f1x_at_obs_top
+        return Gxx
+
+    # -------------------------
+    # Case C: obs above src
+    # -------------------------
+    f2x_at_obs_top = propagate_up_TM(
+        f2x_src, q_list, R_up,
+        layer_src, layer_obs,
+        k0, d_list, eps_list
+    )
+    dress = (np.exp(+q_obs * k0 * z_obs) + np.exp(-q_obs * k0 * z_obs) * RB_obs)
+    Gxx = dress * f2x_at_obs_top
+    return Gxx
 
 
 def gzz_TM(n_list, d_list,
@@ -245,46 +290,89 @@ def gzz_TM(n_list, d_list,
            layer_obs, z_obs,
            k0, kp):
     """
-    TM Green's function component G_zz.
+    TM Green's function component G_zz for multilayer.
 
-    Same-layer only.
-
-    TODO:
-        Cross-layer propagation form not written here.
-        Ask 張亞中 how to extend G_zz to layer_obs != layer_src.
+    - Same-layer: use your paper-form (the one you already wrote).
+    - Cross-layer: use the 'general formula' route you specified:
+          Gzz(z,z') = (kp^2 / q_obs^4) * (∂z ∂z') Gxx(z,z')    (z != z')
+      with the rule: ∂_{z'} acts ONLY on f1/f2 (so we propagate df1/df2).
     """
 
-    # Level 1
-    q_list = compute_q_list(n_list, k0, kp)
-    eps_list = np.array(n_list)**2
+    eps_list = np.array(n_list, dtype=complex)**2
+    q_list   = compute_q_list(n_list, k0, kp)
 
-    # Level 2
-    R_down = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")
-    R_up   = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")
+    # reflections (TM)
+    R_down = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")  # RF_all
+    R_up   = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")  # RB_all
 
-    if layer_obs != layer_src:
-        raise NotImplementedError("gzz_TM: cross-layer case needs 張亞中確認")
+    # ------------------------------------------------------------
+    # Case A: same layer (paper form you used before)
+    # ------------------------------------------------------------
+    if layer_obs == layer_src:
+        n   = layer_src
+        q   = q_list[n]
+        eps = eps_list[n]
+        RF  = R_down[n]
+        RB  = R_up[n]
 
-    n = layer_src
-    q = q_list[n]
-    eps = eps_list[n]
+        f1z, f2z = TM_f1zf2z_same_layer(
+            q_list, R_down, R_up,
+            layer_src, z_src, k0, kp
+        )
 
-    RF = R_down[n]
-    RB = R_up[n]
+        Gzz = (
+            (kp**2) / (2 * k0**3 * eps * q)
+            - (1j * kp / (q * k0)) * np.exp(+q * k0 * z_obs) * RF * f1z
+            + (1j * kp / (q * k0)) * np.exp(-q * k0 * z_obs) * RB * f2z
+        )
+        return Gzz
 
-    # Level 3: TM same-layer source amplitudes (paper form)
-    f1z, f2z = TM_f1zf2z_same_layer(
+    # ------------------------------------------------------------
+    # Case B/C: cross layer (your df-propagation route)
+    # ------------------------------------------------------------
+    q_obs  = q_list[layer_obs]
+    RF_obs = R_down[layer_obs]
+    RB_obs = R_up[layer_obs]
+
+    # source-side df1x/df2x at z_src (your code)
+    df1x_src, df2x_src = TM_df1xdf2x_same_layer(
         q_list, R_down, R_up,
         layer_src, z_src, k0, kp
     )
 
-    # same-layer paper structure
-    Gzz = (
-        (kp**2) / (2 * k0**3 * eps * q)
-        - (1j * kp / (q * k0)) * np.exp(+q * k0 * z_obs) * RF * f1z
-        + (1j * kp / (q * k0)) * np.exp(-q * k0 * z_obs) * RB * f2z
+    # -------------------------
+    # obs below src  (use f1-branch)
+    # -------------------------
+    if layer_obs > layer_src:
+        df1x_at_obs_top = propagate_down_TM(
+            df1x_src, q_list, R_down,
+            layer_src, layer_obs,
+            k0, d_list, eps_list
+        )
+
+        # A(z) = exp(-qz) + exp(+qz) RF
+        # A'(z)= -q exp(-qz) + q exp(+qz) RF
+        Aprime = (-q_obs* k0) * np.exp(-q_obs * k0 * z_obs) + (q_obs * k0) * np.exp(+q_obs * k0 * z_obs) * RF_obs
+
+        d2Gxx = Aprime * df1x_at_obs_top          # ∂z∂z' Gxx  (per your rule)
+        Gzz   = (kp**2 / (q_obs**4 * k0**4)) * d2Gxx      # your prefactor
+        return Gzz
+
+    # -------------------------
+    # obs above src  (use f2-branch)
+    # -------------------------
+    df2x_at_obs_top = propagate_up_TM(
+        df2x_src, q_list, R_up,
+        layer_src, layer_obs,
+        k0, d_list, eps_list
     )
 
+    # B(z) = exp(+qz) + exp(-qz) RB
+    # B'(z)= +q exp(+qz) - q exp(-qz) RB
+    Bprime = (q_obs * k0) * np.exp(+q_obs * k0 * z_obs) - (q_obs * k0) * np.exp(-q_obs * k0 * z_obs) * RB_obs
+
+    d2Gxx = Bprime * df2x_at_obs_top
+    Gzz   = (kp**2 / (q_obs**4 * k0**4)) * d2Gxx
     return Gzz
 
 
@@ -295,42 +383,82 @@ def gxz_TM(n_list, d_list,
     """
     TM Green's function component G_xz.
 
-    Same-layer only (layer_obs == layer_src).
-
-    TODO (ask 張亞中):
-        Paper does not give an explicit cross-layer (layer_obs != layer_src) formula for G_xz.
-        Confirm how to construct/propagate the needed amplitudes for different layers.
+    Conventions:
+        - q_list is dimensionless: q = -sqrt(kp^2 - eps*k0^2)/k0
+        - exp factors always use (q * k0 * z)
+        - RF = R_down, RB = R_up
+        - IMPORTANT: we assume f1z/f2z ALREADY include the prefactor (-i*kp)/(2*k0^2*eps)
+          through the denominator in TM_f1zf2z_same_layer().
+          Therefore cross-layer terms do NOT multiply an extra prefactor.
     """
+    eps_list = np.array(n_list, dtype=complex)**2
 
-    # -------------------------
-    # Level 1: q per layer
-    # -------------------------
+    # Level 1
     q_list = compute_q_list(n_list, k0, kp)
 
-    # -------------------------
-    # Level 2: reflections (TM)
-    # -------------------------
+    # Level 2 (TM reflections)
     R_down = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")  # RF_all
     R_up   = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")  # RB_all
 
-    # -------------------------
-    # Same-layer only
-    # -------------------------
-    if layer_obs != layer_src:
-        raise NotImplementedError("gxz_TM: cross-layer case needs 張亞中確認")
+    q_obs  = q_list[layer_obs]
+    RF_obs = R_down[layer_obs]
+    RB_obs = R_up[layer_obs]
 
-    n = layer_src
-    q  = q_list[n]
-    RF = R_down[n]
-    RB = R_up[n]
+    # Level 3: source amplitudes for z-branch (same-layer definition at z_src)
+    f1z_src, f2z_src = TM_f1zf2z_same_layer(
+        q_list, R_down, R_up,
+        layer_src, z_src, k0, kp
+    )
 
-    sgn = np.sign(z_obs - z_src)
+    # ============================================================
+    # Case A: same layer
+    # (your corrected paper form: prefactor is already inside f1z/f2z)
+    # ============================================================
+    if layer_obs == layer_src:
+        q = q_list[layer_src]
+        RF = R_down[layer_src]
+        RB = R_up[layer_src]
 
-    # paper same-layer structure (written in your q-convention)
-    Gxz = (-1j * kp / (2.0 * k0**2)) * (
-        sgn * np.exp(-q * k0 * np.abs(z_obs - z_src))
-        + np.exp(+q * k0 * z_obs) * RB * np.exp(-q * k0 * z_src)
-        + np.exp(-q * k0 * z_obs) * RF * np.exp(+q * k0 * z_src)
+        sgn = np.sign(z_obs - z_src)
+
+        # NOTE: keep exactly this structure (no extra pref outside)
+        Gxz = (
+            -sgn * np.exp(-q * k0 * np.abs(z_obs - z_src))
+            + np.exp(+q * k0 * z_obs) * RF * f1z_src
+            + np.exp(-q * k0 * z_obs) * RB * f2z_src
+        )
+
+        return Gxz
+
+    # ============================================================
+    # Case B: obs below src  (layer_obs > layer_src) -> use f1z branch
+    # ============================================================
+    if layer_obs > layer_src:
+        f1z_at_obs = propagate_down_TM(
+            f1z_src, q_list, R_down,
+            layer_src, layer_obs,
+            k0, d_list, eps_list
+        )
+
+        Gxz = (
+            np.exp(-q_obs * k0 * z_obs) * f1z_at_obs
+            + np.exp(+q_obs * k0 * z_obs) * RF_obs * f1z_at_obs
+        )
+
+        return Gxz
+
+    # ============================================================
+    # Case C: obs above src (layer_obs < layer_src) -> use f2z branch
+    # ============================================================
+    f2z_at_obs = propagate_up_TM(
+        f2z_src, q_list, R_up,
+        layer_src, layer_obs,
+        k0, d_list, eps_list
+    )
+
+    Gxz = (
+        np.exp(+q_obs * k0 * z_obs) * f2z_at_obs
+        + np.exp(-q_obs * k0 * z_obs) * RB_obs * f2z_at_obs
     )
 
     return Gxz
@@ -341,50 +469,88 @@ def gzx_TM(n_list, d_list,
            layer_obs, z_obs,
            k0, kp):
     """
-    TM Green's function component g_zx.
+    TM Green's function component G_zx.
 
-    NOTE:
-        - Only SAME-LAYER (layer_obs == layer_src) is implemented
-        - Cross-layer formula not given explicitly in Y.C. Chang paper
-        - NEED TO ASK 張亞中
+    Conventions:
+        q_list is dimensionless, exp uses (q*k0*z).
+        RF = R_down, RB = R_up.
+
+    Structure:
+        - same-layer: keep your paper form (with sgn term)
+        - cross-layer: NO sgn term, use propagation + local dressing
+          based on your screenshot:
+              Gxx = (e^{-qz} + e^{+qz} RF) f1(z')   for z > z'
+              Gxx = (e^{+qz} + e^{-qz} RB) f2(z')   for z < z'
+          and
+              Gzx = -(i kp / q^2) ∂_z Gxx
     """
+    eps_list = np.array(n_list, dtype=complex)**2
+    q_list   = compute_q_list(n_list, k0, kp)
 
-    if layer_obs != layer_src:
-        raise NotImplementedError(
-            "gzx_TM for different layers not implemented; ask Y.C. Chang"
-        )
+    R_down = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")
+    R_up   = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")
 
-    eps_list = np.array(n_list)**2
-    q_list = -np.sqrt(kp**2 - eps_list * k0**2 + 0j) / k0
-
-    q  = q_list[layer_src]
-    RF = compute_RF_all(n_list, d_list, k0, kp, polarization="TM")[layer_src]
-    RB = compute_RB_all(n_list, d_list, k0, kp, polarization="TM")[layer_src]
-
-    # TM source amplitudes (same layer)
-    f1, f2 = TM_f1xf2x_same_layer(
-        q_list, 
-        compute_RF_all(n_list, d_list, k0, kp, "TM"),
-        compute_RB_all(n_list, d_list, k0, kp, "TM"),
-        layer_src, z_src, k0, kp
+    # source amplitudes for x-branch (defined at z_src in source layer)
+    f1x_src, f2x_src = TM_f1xf2x_same_layer(
+        q_list, R_down, R_up, layer_src, z_src, k0, kp, eps_list
     )
 
-    # exponentials
-    ez   = np.exp(+q * k0 * z_obs)
-    emz  = np.exp(-q * k0 * z_obs)
-    ezp  = np.exp(+q * k0 * z_src)
-    emzp = np.exp(-q * k0 * z_src)
+    q_obs  = q_list[layer_obs]
+    RF_obs = R_down[layer_obs]
+    RB_obs = R_up[layer_obs]
 
-    # sign term
-    sgn = np.sign(z_obs - z_src)
+    # ============================================================
+    # Case A: same layer (keep your current paper form)
+    # ============================================================
+    if layer_obs == layer_src:
+        q  = q_list[layer_src]
+        RF = R_down[layer_src]
+        RB = R_up[layer_src]
 
-    # === paper Eq.(17), NO rearrangement ===
-    gzx = (
-        -1j * kp / (2 * k0**2) * sgn * np.exp(-q * k0 * np.abs(z_obs - z_src))
-        + (1j * kp / q) * (
-            - ez * RF * f1
-            + emz * RB * f2
+        sgn = np.sign(z_obs - z_src)
+
+        gzx = (
+            -1j * kp / (2 * k0**2) * sgn * np.exp(-q * k0 * np.abs(z_obs - z_src))
+            + (1j * kp / q) * (
+                - np.exp(+q * k0 * z_obs) * RF * f1x_src
+                + np.exp(-q * k0 * z_obs) * RB * f2x_src
+            )
         )
+        return gzx
+
+    # ============================================================
+    # Case B: obs below src  (layer_obs > layer_src) -> f1x branch
+    # ============================================================
+    if layer_obs > layer_src:
+        f1x_at_obs = propagate_down_TM(
+            f1x_src, q_list, R_down,
+            layer_src, layer_obs,
+            k0, d_list, eps_list
+        )
+
+        # From Gxx = (e^{-qz} + e^{+qz} RF) f1
+        # ∂zGxx = (-q e^{-qz} + q e^{+qz} RF) f1
+        # Gzx = -(i kp / q^2) ∂zGxx  -> (-i kp / q) * (-e^{-qz} + e^{+qz} RF) f1
+        gzx = (-1j * kp / (q_obs*k0) ) * (
+            - np.exp(-q_obs * k0 * z_obs) * f1x_at_obs
+            + np.exp(+q_obs * k0 * z_obs) * RF_obs * f1x_at_obs
+        )
+        return gzx
+
+    # ============================================================
+    # Case C: obs above src (layer_obs < layer_src) -> f2x branch
+    # ============================================================
+    f2x_at_obs = propagate_up_TM(
+        f2x_src, q_list, R_up,
+        layer_src, layer_obs,
+        k0, d_list, eps_list
     )
 
+    # From Gxx = (e^{+qz} + e^{-qz} RB) f2
+    # ∂zGxx = ( +q e^{+qz} - q e^{-qz} RB) f2
+    # Gzx = -(i kp / q^2) ∂zGxx -> (-i kp / q) * ( +e^{+qz} - e^{-qz} RB) f2
+    gzx = (-1j * kp / (q_obs*k0) ) * (
+        + np.exp(+q_obs * k0 * z_obs) * f2x_at_obs
+        - np.exp(-q_obs * k0 * z_obs) * RB_obs * f2x_at_obs
+    )
     return gzx
