@@ -34,7 +34,7 @@ def compute_q_list(n_list, k0, kp):
     eps_list = np.array(n_list)**2
 
     # 使用陣列運算，一次算完所有 q_j
-    q_list = -np.sqrt(kp**2 - eps_list * k0**2 + 0j) / k0
+    q_list = np.sqrt(kp**2 - eps_list * k0**2 + 0j) / k0
 
     return q_list
 
@@ -329,7 +329,7 @@ def gyy_TE(n_list, d_list,
     # ============================================================
     elif layer_obs > layer_src:
         f1y_at_obs_top = propagate_down_TE(
-            f1y_src, q_list, R_down, R_up,
+            f1y_src, q_list, R_down,
             layer_src, layer_obs, k0, d_list
         )
 
@@ -343,7 +343,7 @@ def gyy_TE(n_list, d_list,
     # ============================================================
     else:
         f2y_at_obs_top = propagate_up_TE(
-            f2y_src, q_list, R_down, R_up,
+            f2y_src, q_list, R_up,
             layer_src, layer_obs, k0, d_list
         )
 
@@ -359,9 +359,9 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     n_list = [1.0, 1.5, 1.3, 1.0]  # 四層結構
-    d_list = [0.0, 2000e-9, 1500e-9]   # 四層結構
+    d_list = [0.0, 2000, 1500]   # 四層結構
 
-    wls = np.linspace(500e-9, 900e-9, 200)
+    wls = np.linspace(500, 900, 200)
 
     diff_RF = []
     diff_RB = []

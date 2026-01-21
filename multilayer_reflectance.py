@@ -99,7 +99,7 @@ def main():
     for i in range(points):
         # RF: 從頂層往下
         R_RF[i] = np.abs(RF_multilayer(n_list, d_list, "TE", k0[i], kp[i], target_layer=0))**2
-        R_RB[i] = np.abs(RB_multilayer(n_list, d_list, "TM", k0[i], kp[i], target_layer=1))**2
+        R_RB[i] = np.abs(RB_multilayer(n_list, d_list, "TM", k0[i], kp[i], target_layer=2))**2
         e1, e2, e3 = n_list[0]**2, n_list[1]**2, n_list[2]**2
         q1 = -np.sqrt(kp[i]**2 - e1*k0[i]**2 + 0j) / k0[i]
         q2 = -np.sqrt(kp[i]**2 - e2*k0[i]**2 + 0j) / k0[i]

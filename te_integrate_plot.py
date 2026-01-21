@@ -126,17 +126,17 @@ def demo_plot_TE():
     Edit the geometry freely; this script intentionally stays separate from te_greens.py.
     """
     # Geometry (edit)
-    n_list = [1.0, 1.5, 1.3, 1.0]
-    d_list = [0.0, 2000e-9, 1500e-9]
+    n_list = [1.0, 1.0, 1.0, 1.0]
+    d_list = [0.0, 2000, 1500]
 
     # Source / obs (edit)
-    layer_src = 1
-    layer_obs = 1
-    z_src = 200e-9
-    z_obs = 800e-9
+    layer_src = 0
+    layer_obs = 0
+    z_src = -100
+    z_obs = -300
 
     # Wavelength -> k0
-    wl = 650e-9
+    wl = 650
     k0 = 2.0 * np.pi / wl
 
     # k_parallel integration setup (edit)
@@ -144,7 +144,7 @@ def demo_plot_TE():
     k_parallel_max = 5.0 * k0
     num_k = 6001  # odd recommended if you switch to Simpson
 
-    rhos = np.linspace(0.0, 0.5e-6, 200)
+    rhos = np.linspace(0.0, 500, 300)
 
     G_rho = np.array([
         gyy_TE_rho(
@@ -161,8 +161,8 @@ def demo_plot_TE():
     ], dtype=np.complex128)
 
     plt.figure()
-    plt.plot(rhos * 1e6, np.real(G_rho), label="Re Gyy")
-    plt.plot(rhos * 1e6, np.imag(G_rho), label="Im Gyy")
+    plt.plot(rhos *1e-3, np.real(G_rho), label="Re Gyy")
+    plt.plot(rhos *1e-3, np.imag(G_rho), label="Im Gyy")
     plt.xlabel(r"$\rho$ (µm)")
     plt.ylabel(r"$G_{yy}^{TE}(\rho)$ (arb.)")
     plt.legend()
@@ -170,9 +170,9 @@ def demo_plot_TE():
     plt.tight_layout()
     plt.show()
     # 再用同一份 G_rho 直接轉成 2D（不重算）
-    plot_Grho_as_2D(G_rho, rhos, extent_um=0.5, N=401, which="real")
+    plot_Grho_as_2D(G_rho, rhos, extent_um=1.5, N=401, which="abs")
 
-def plot_Grho_as_2D(G_rho, rhos, extent_um=0.5, N=401, which="real"):
+def plot_Grho_as_2D(G_rho, rhos, extent_um=1.5, N=401, which="real"):
     """
     Make a 2D map from radial data G(ρ) by coordinate transform + interpolation.
 
@@ -181,8 +181,8 @@ def plot_Grho_as_2D(G_rho, rhos, extent_um=0.5, N=401, which="real"):
     which: "real" or "imag" or "abs"
     """
     # 1) build (x,y) grid in meters
-    x = np.linspace(-extent_um, extent_um, N) * 1e-6
-    y = np.linspace(-extent_um, extent_um, N) * 1e-6
+    x = np.linspace(-extent_um, extent_um, N) * 1e3
+    y = np.linspace(-extent_um, extent_um, N) * 1e3
     X, Y = np.meshgrid(x, y, indexing="xy")
     R = np.sqrt(X**2 + Y**2)
 
@@ -200,7 +200,7 @@ def plot_Grho_as_2D(G_rho, rhos, extent_um=0.5, N=401, which="real"):
         raise ValueError('which must be "real", "imag", or "abs"')
 
     # 3) interpolate g(ρ) onto R
-    # rhos is in meters already in your code
+    # rhos is in nm already in your code
     # np.interp is fast (linear); outside range -> fill with 0
     G2 = np.interp(R.ravel(), rhos, g1d, left=0.0, right=0.0).reshape(R.shape)
 
